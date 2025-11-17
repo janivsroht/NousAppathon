@@ -102,28 +102,6 @@ class MainActivity : ComponentActivity() {
         val haptic = LocalHapticFeedback.current
         val ctx = LocalContext.current
 
-        // Track last passed index to avoid duplicate haptics for the same boundary
-        var lastWheelIndex by remember { mutableStateOf(-1) }
-
-        // Fire subtle haptic ticks when the wheel passes each color boundary
-        LaunchedEffect(wheelProgress, randomColorInfos.size) {
-            snapshotFlow { wheelProgress }
-                .collectLatest { progress ->
-                    // Only run ticks while the wheel is actually playing (not during random animation plays)
-                    if (currentInfo == null && !isRandomPlaying) {
-                        val idx = kotlin.math.floor(progress * randomColorInfos.size).toInt()
-                            .coerceIn(0, randomColorInfos.lastIndex)
-                        if (idx != lastWheelIndex) {
-                            // subtle tick
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                            lastWheelIndex = idx
-                        }
-                    } else {
-                        lastWheelIndex = -1
-                    }
-                }
-        }
-
         // --- Conditional load of the chosen random composition (call composable functions directly) ---
         val randomCompositionState = if (currentInfo != null) {
             rememberLottieComposition(LottieCompositionSpec.RawRes(currentInfo!!.resId))
