@@ -38,6 +38,8 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieAnimatable
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.nousappathon.ui.theme.NousAppathonTheme
+import kotlin.coroutines.cancellation.CancellationException
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,13 +60,13 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ColorWheelCenterWithRandomPlay() {
-        // static wheel (shown while no random animation is playing)
+        // static wheel composition (but will be looped via animateLottieCompositionAsState)
         val wheelComposition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.nothing))
 
-        // your list mapped to names & hex
+        // your color/animation list
         val randomColorInfos = listOf(
             ColorInfo(R.raw.red, "Red", "#E63946"),
-            ColorInfo(R.raw.orange, "Orange", "#F3722C"),
+            ColorInfo(R.raw.orange, "Peel", "#F3722C"),
             ColorInfo(R.raw.yellow, "Yellow", "#F9C74F"),
             ColorInfo(R.raw.green, "Green", "#4CAF50"),
             ColorInfo(R.raw.cyan, "Cyan", "#00BCD4"),
@@ -73,16 +75,24 @@ class MainActivity : ComponentActivity() {
             ColorInfo(R.raw.violet, "Violet", "#9D4EDD")
         )
 
-        // state controlling which color/animation is chosen (null => show wheel)
+        // currently chosen color/animation (null means "no random chosen" -> show looping wheel)
         var currentInfo by remember { mutableStateOf<ColorInfo?>(null) }
 
-        // whether an animation is currently playing (disable button while true)
-        var isPlaying by remember { mutableStateOf(false) }
+        // whether a random animation is actively playing (used to disable button)
+        var isRandomPlaying by remember { mutableStateOf(false) }
 
-        // whether the played animation has finished (used to show color text and re-enable button)
+        // whether the random animation finished (used to show text and re-enable button)
         var animationFinished by remember { mutableStateOf(false) }
 
-        // Conditional composition state for the chosen animation; call composable APIs directly
+        // --- Wheel playback: loop while no random animation is chosen/playing ---
+        val wheelProgress by animateLottieCompositionAsState(
+            composition = wheelComposition,
+            // play wheel when currentInfo == null and a random isn't playing
+            isPlaying = (currentInfo == null && !isRandomPlaying),
+            iterations = LottieConstants.IterateForever
+        )
+
+        // --- Conditional load of the chosen random composition (call composable functions directly) ---
         val randomCompositionState = if (currentInfo != null) {
             rememberLottieComposition(LottieCompositionSpec.RawRes(currentInfo!!.resId))
         } else {
@@ -90,36 +100,38 @@ class MainActivity : ComponentActivity() {
         }
         val randomComposition by randomCompositionState
 
-        // Use a LottieAnimatable to control playback precisely and detect completion
+        // LottieAnimatable to play the chosen composition once and detect completion
         val animatable = rememberLottieAnimatable()
 
-        // When a new randomComposition becomes available (i.e., currentInfo was set),
-        // launch a coroutine to animate it once, set flags when complete.
+        // When randomComposition becomes available, play it once in a coroutine and set flags
         LaunchedEffect(randomComposition) {
-            // reset flags if no composition
-            if (randomComposition == null) {
-                isPlaying = false
+            // make sure we have a valid composition to play
+            val comp = randomComposition ?: run {
+                isRandomPlaying = false
                 animationFinished = false
                 return@LaunchedEffect
             }
 
-            // start playing
-            isPlaying = true
+            isRandomPlaying = true
             animationFinished = false
 
             try {
-                // animate the chosen composition exactly once
+                // call animate with a non-null composition and single iteration
                 animatable.animate(
-                    composition = randomComposition,
-                    iterations = 1, // play only once -> avoids cycling
+                    composition = comp,
+                    iterations = 1
                 )
-                // when animate() returns, the animation has finished
+                // animate() returns when playback finishes
                 animationFinished = true
+            } catch (e: CancellationException) {
+                // coroutine cancellation: rethrow so cancellation propagates correctly
+                throw e
             } catch (e: Exception) {
-                // if something goes wrong (parse/load error), avoid locking the UI
+                // parsing or playback error — avoid locking UI
+                e.printStackTrace()
                 animationFinished = true
             } finally {
-                isPlaying = false
+                isRandomPlaying = false
             }
         }
 
@@ -130,34 +142,38 @@ class MainActivity : ComponentActivity() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Center animation area
+            // Center area for wheel / random animation
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(380.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // If no animation selected -> show static wheel (fixed frame).
-                // If animation selected -> show the animatable (plays once).
+
+                // Show wheel when no random chosen; else show animatable driven composition
                 if (currentInfo == null) {
+                    // looping wheel (no flicker)
                     LottieAnimation(
                         composition = wheelComposition,
-                        progress = { 0f }, // static frame
-                        modifier = Modifier.size(260.dp)
+                        progress = { wheelProgress },
+                        modifier = Modifier.size(500.dp)
                     )
                 } else {
-                    // show the animatable; use its current value (no flicker)
-                    LottieAnimation(
-                        composition = randomComposition,
-                        progress = { animatable.progress },
-                        modifier = Modifier.size(300.dp)
-                    )
+                    // show the animating random composition driven by animatable (no flicker)
+                    if (randomComposition != null) {
+                        // progress can be a State<Float> or Float; use .value if needed
+                        LottieAnimation(
+                            composition = randomComposition,
+                            progress = { animatable.progress },
+                            modifier = Modifier.size(500.dp)
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Show color name + hex ONLY after animationFinished == true
+            // Show color name + hex only after the chosen animation finished
             if (animationFinished && currentInfo != null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = currentInfo!!.displayName)
@@ -166,23 +182,42 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Button directly below the wheel.
-            // - disabled while isPlaying is true
-            // - on click: choose random, reset flags, and let LaunchedEffect handle playback
+            // Button
+            // Enabled when:
+            // - not currently playing a random animation (isRandomPlaying == false)
+            // AND
+            // - either we haven't chosen one yet (currentInfo == null)  --> initial enabled
+            //   OR we've finished the last play and shown text (animationFinished == true) --> allow new pick
+            val buttonEnabled = !isRandomPlaying && (currentInfo == null || animationFinished)
+
             Button(
                 onClick = {
-                    // pick random info and reset states for a fresh run
+                    // ignore clicks when disabled (defensive)
+                    if (!buttonEnabled) return@Button
+
+                    // pick a random color animation and reset flags
                     val pick = randomColorInfos[Random.nextInt(randomColorInfos.size)]
                     currentInfo = pick
                     animationFinished = false
-                    // animatable will play when randomComposition becomes available (handled in LaunchedEffect)
+                    // animatable playback will start automatically because randomComposition changes and triggers LaunchedEffect
                 },
-                enabled = !isPlaying && !(animationFinished && currentInfo != null) // optionally prevent re-click immediately after finish if you want
+                enabled = buttonEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             ) {
-                Text(text = if (isPlaying) "Playing..." else "Play a Random Animation")
+                Text(
+                    text = when {
+                        isRandomPlaying -> "Generating..."
+                        currentInfo == null -> "Get a Random Color"
+                        animationFinished -> "Try Again"
+                        else -> "Generating..."
+                    }
+                )
             }
         }
     }
+
 
 
 
