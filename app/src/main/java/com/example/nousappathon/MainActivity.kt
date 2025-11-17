@@ -5,7 +5,8 @@ import kotlin.random.Random
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,16 +64,18 @@ class MainActivity : ComponentActivity() {
         val wheelComposition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.nothing))
 
         // your color/animation list
-        val randomColorInfos = listOf(
-            ColorInfo(R.raw.red, "Red", "#E63946"),
-            ColorInfo(R.raw.orange, "Peel", "#F3722C"),
-            ColorInfo(R.raw.yellow, "Yellow", "#F9C74F"),
-            ColorInfo(R.raw.green, "Green", "#4CAF50"),
-            ColorInfo(R.raw.cyan, "Cyan", "#00BCD4"),
-            ColorInfo(R.raw.skyblue, "Blue", "#64B5F6"),
-            ColorInfo(R.raw.indigo, "Indigo", "#3F51B5"),
-            ColorInfo(R.raw.violet, "Violet", "#9D4EDD")
-        )
+        val randomColorInfos = remember {
+            listOf(
+                ColorInfo(R.raw.red, "Red", "#E63946"),
+                ColorInfo(R.raw.orange, "Orange", "#F3722C"),
+                ColorInfo(R.raw.yellow, "Yellow", "#F9C74F"),
+                ColorInfo(R.raw.green, "Green", "#4CAF50"),
+                ColorInfo(R.raw.cyan, "Cyan", "#00BCD4"),
+                ColorInfo(R.raw.skyblue, "Blue", "#64B5F6"),
+                ColorInfo(R.raw.indigo, "Indigo", "#3F51B5"),
+                ColorInfo(R.raw.violet, "Violet", "#9D4EDD")
+            )
+        }
 
         // currently chosen color/animation (null means "no random chosen" -> show looping wheel)
         var currentInfo by remember { mutableStateOf<ColorInfo?>(null) }
@@ -156,7 +158,7 @@ class MainActivity : ComponentActivity() {
                     LottieAnimation(
                         composition = wheelComposition,
                         progress = { wheelProgress },
-                        modifier = Modifier.size(500.dp)
+                        modifier = Modifier.size(380.dp)
                     )
                 } else {
                     // show the animating random composition driven by animatable (no flicker)
@@ -165,22 +167,32 @@ class MainActivity : ComponentActivity() {
                         LottieAnimation(
                             composition = randomComposition,
                             progress = { animatable.progress },
-                            modifier = Modifier.size(500.dp)
+                            modifier = Modifier.size(380.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Show color name + hex only after the chosen animation finished
-            if (animationFinished && currentInfo != null) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = currentInfo!!.displayName)
-                    Spacer(modifier = Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+                contentAlignment = Alignment.Center
+            )
+            {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = (animationFinished && currentInfo != null),
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(currentInfo?.displayName?:"")
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Button
             // Enabled when:
@@ -210,7 +222,7 @@ class MainActivity : ComponentActivity() {
                     text = when {
                         isRandomPlaying -> "Generating..."
                         currentInfo == null -> "Get a Random Color"
-                        animationFinished -> "Try Again"
+                        animationFinished -> "Get a Random Color"
                         else -> "Generating..."
                     }
                 )
