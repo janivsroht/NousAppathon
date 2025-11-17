@@ -1,6 +1,8 @@
 package com.example.nousappathon
 
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
 import kotlin.random.Random
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,8 +28,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.airbnb.lottie.LottieComposition
@@ -38,6 +43,7 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieAnimatable
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.nousappathon.ui.theme.NousAppathonTheme
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.coroutines.cancellation.CancellationException
 
 
@@ -55,9 +61,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
     data class ColorInfo(val resId: Int, val displayName: String, val hex: String)
-
     @Composable
     fun ColorWheelCenterWithRandomPlay() {
         // static wheel composition (but will be looped via animateLottieCompositionAsState)
@@ -94,6 +98,32 @@ class MainActivity : ComponentActivity() {
             iterations = LottieConstants.IterateForever
         )
 
+        // HAPTICS setup
+        val haptic = LocalHapticFeedback.current
+        val ctx = LocalContext.current
+
+        // Track last passed index to avoid duplicate haptics for the same boundary
+        var lastWheelIndex by remember { mutableStateOf(-1) }
+
+        // Fire subtle haptic ticks when the wheel passes each color boundary
+        LaunchedEffect(wheelProgress, randomColorInfos.size) {
+            snapshotFlow { wheelProgress }
+                .collectLatest { progress ->
+                    // Only run ticks while the wheel is actually playing (not during random animation plays)
+                    if (currentInfo == null && !isRandomPlaying) {
+                        val idx = kotlin.math.floor(progress * randomColorInfos.size).toInt()
+                            .coerceIn(0, randomColorInfos.lastIndex)
+                        if (idx != lastWheelIndex) {
+                            // subtle tick
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            lastWheelIndex = idx
+                        }
+                    } else {
+                        lastWheelIndex = -1
+                    }
+                }
+        }
+
         // --- Conditional load of the chosen random composition (call composable functions directly) ---
         val randomCompositionState = if (currentInfo != null) {
             rememberLottieComposition(LottieCompositionSpec.RawRes(currentInfo!!.resId))
@@ -107,7 +137,6 @@ class MainActivity : ComponentActivity() {
 
         // When randomComposition becomes available, play it once in a coroutine and set flags
         LaunchedEffect(randomComposition) {
-            // make sure we have a valid composition to play
             val comp = randomComposition ?: run {
                 isRandomPlaying = false
                 animationFinished = false
@@ -118,18 +147,21 @@ class MainActivity : ComponentActivity() {
             animationFinished = false
 
             try {
-                // call animate with a non-null composition and single iteration
+                // play once
                 animatable.animate(
                     composition = comp,
                     iterations = 1
                 )
-                // animate() returns when playback finishes
+                // finished playing -> selection made
                 animationFinished = true
+
+                // stronger vibration to indicate selection
+                vibrateOnce(ctx, durationMs = 70L, amplitude = VibrationEffect.DEFAULT_AMPLITUDE)
+                // optional: light haptic "confirm" as well
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
             } catch (e: CancellationException) {
-                // coroutine cancellation: rethrow so cancellation propagates correctly
                 throw e
             } catch (e: Exception) {
-                // parsing or playback error — avoid locking UI
                 e.printStackTrace()
                 animationFinished = true
             } finally {
@@ -151,7 +183,6 @@ class MainActivity : ComponentActivity() {
                     .height(380.dp),
                 contentAlignment = Alignment.Center
             ) {
-
                 // Show wheel when no random chosen; else show animatable driven composition
                 if (currentInfo == null) {
                     // looping wheel (no flicker)
@@ -163,7 +194,6 @@ class MainActivity : ComponentActivity() {
                 } else {
                     // show the animating random composition driven by animatable (no flicker)
                     if (randomComposition != null) {
-                        // progress can be a State<Float> or Float; use .value if needed
                         LottieAnimation(
                             composition = randomComposition,
                             progress = { animatable.progress },
@@ -175,18 +205,17 @@ class MainActivity : ComponentActivity() {
 
             Box(
                 modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+                    .fillMaxWidth()
+                    .height(56.dp),
                 contentAlignment = Alignment.Center
-            )
-            {
+            ) {
                 androidx.compose.animation.AnimatedVisibility(
                     visible = (animationFinished && currentInfo != null),
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(currentInfo?.displayName?:"")
+                        Text(currentInfo?.displayName ?: "")
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
@@ -195,17 +224,15 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Button
-            // Enabled when:
-            // - not currently playing a random animation (isRandomPlaying == false)
-            // AND
-            // - either we haven't chosen one yet (currentInfo == null)  --> initial enabled
-            //   OR we've finished the last play and shown text (animationFinished == true) --> allow new pick
             val buttonEnabled = !isRandomPlaying && (currentInfo == null || animationFinished)
 
             Button(
                 onClick = {
-                    // ignore clicks when disabled (defensive)
                     if (!buttonEnabled) return@Button
+
+                    // immediate haptic on button press
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    vibrateOnce(ctx, 40L)
 
                     // pick a random color animation and reset flags
                     val pick = randomColorInfos[Random.nextInt(randomColorInfos.size)]
@@ -229,6 +256,28 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    // Vibration helper (add near top-level of file, inside the Activity file as you had earlier)
+    fun vibrateOnce(context: android.content.Context, durationMs: Long = 40L, amplitude: Int = VibrationEffect.DEFAULT_AMPLITUDE) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+                val vibrator = vm.defaultVibrator
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
+            } else {
+                val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(durationMs)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
 
 
 
