@@ -18,7 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +52,7 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.nousappathon.ui.theme.NousAppathonTheme
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.coroutines.cancellation.CancellationException
+import com.example.nousappathon.ui.CameraScreen
 
 
 class MainActivity : ComponentActivity() {
@@ -55,7 +63,36 @@ class MainActivity : ComponentActivity() {
             NousAppathonTheme {
                 MaterialTheme {
                     Surface(modifier = Modifier.fillMaxSize()) {
-                        ColorWheelCenterWithRandomPlay()
+                        var showCamera by remember { mutableStateOf(false) }
+
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (!showCamera) {
+
+                                ColorWheelCenterWithRandomPlay()
+
+                                FloatingActionButton(
+                                    onClick = { showCamera = true },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 20.dp, bottom = 30.dp)
+                                        .size(56.dp) // default FAB size; adjust if you want larger
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = "Open Camera",
+                                        modifier = Modifier.size(24.dp) // icon size inside FAB
+                                    )
+                                }
+
+
+
+                            } else {
+                                CameraScreen(
+                                    onBack = { showCamera = false }
+                                )
+                            }
+                        }
+
                     }
                 }
             }
@@ -255,6 +292,25 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
     }
+    @Composable
+    fun MainHomeScreen(onOpenCamera: () -> Unit) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+
+            Button(onClick = onOpenCamera) {
+                Icon(
+                    imageVector = Icons.Default.CameraAlt,
+                    contentDescription = "Camera"
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Open Camera")
+            }
+
+        }
+    }
+
 
 
 
@@ -265,6 +321,35 @@ class MainActivity : ComponentActivity() {
     fun GreetingPreview() {
         NousAppathonTheme {
             ColorWheelCenterWithRandomPlay()
+            var showCamera by remember { mutableStateOf(false) }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (!showCamera) {
+
+                    ColorWheelCenterWithRandomPlay()
+
+                    // CAMERA BUTTON (TOP RIGHT OR WHEREVER YOU WANT)
+                    ExtendedFloatingActionButton(
+                        onClick = { showCamera = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 20.dp, bottom = 30.dp),
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Open Camera"
+                            )
+                        },
+                        text = {}
+                    )
+
+
+                } else {
+                    CameraScreen(
+                        onBack = { showCamera = false }
+                    )
+                }
+            }
         }
     }
 }
