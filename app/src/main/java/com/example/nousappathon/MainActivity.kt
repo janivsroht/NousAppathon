@@ -60,6 +60,7 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieAnimatable
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.nousappathon.ui.CameraScreen
+import com.example.nousappathon.ui.GalleryScreen
 import com.example.nousappathon.ui.theme.NousAppathonTheme
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
@@ -70,6 +71,10 @@ private val CaveatFontFamily = FontFamily(
     Font(R.font.caveat_bold, weight = FontWeight.Bold)
 )
 
+private enum class MainScreen {
+    Palette, Camera, Gallery
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,7 +84,8 @@ class MainActivity : ComponentActivity() {
                 MaterialTheme {
                     // use Compose Surface (not android.view.Surface)
                     Surface(modifier = Modifier.fillMaxSize()) {
-                        var showCamera by remember { mutableStateOf(false) }
+                        var currentScreen by remember { mutableStateOf(MainScreen.Palette) }
+                        var galleryReturnScreen by remember { mutableStateOf(MainScreen.Palette) }
 
                         // shutter color state (default white)
                         var shutterColor by remember { mutableStateOf(Color.White) }
@@ -88,53 +94,64 @@ class MainActivity : ComponentActivity() {
                         var isColorConfirmed by rememberSaveable { mutableStateOf(false) }
 
                         Box(modifier = Modifier.fillMaxSize()) {
-                            if (!showCamera) {
-
-                                // pass callback so ColorWheel can report its picked color
-                                ColorWheelCenterWithRandomPlay(
-                                    selectedIndex = selectedColorIndex,
-                                    isSelectionConfirmed = isColorConfirmed,
-                                    onSelectionChanged = { info ->
-                                        val idx = randomColorInfos.indexOf(info)
-                                        selectedColorIndex = if (idx >= 0) idx else null
-                                        isColorConfirmed = false
-                                        try {
-                                            val intColor = info.hex.toColorInt()
-                                            shutterColor = Color(intColor)
-                                        } catch (_: Exception) {
-                                            shutterColor = Color.White
+                            when (currentScreen) {
+                                MainScreen.Palette -> {
+                                    ColorWheelCenterWithRandomPlay(
+                                        selectedIndex = selectedColorIndex,
+                                        isSelectionConfirmed = isColorConfirmed,
+                                        onSelectionChanged = { info ->
+                                            val idx = randomColorInfos.indexOf(info)
+                                            selectedColorIndex = if (idx >= 0) idx else null
+                                            isColorConfirmed = false
+                                            try {
+                                                val intColor = info.hex.toColorInt()
+                                                shutterColor = Color(intColor)
+                                            } catch (_: Exception) {
+                                                shutterColor = Color.White
+                                            }
+                                        },
+                                        onConfirmationChange = { confirmed ->
+                                            isColorConfirmed = confirmed
                                         }
-                                    },
-                                    onConfirmationChange = { confirmed ->
-                                        isColorConfirmed = confirmed
-                                    }
-                                )
-
-                                FloatingActionButton(
-                                    onClick = { showCamera = true },
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(end = 20.dp, bottom = 30.dp)
-                                        .size(56.dp),
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                    elevation = FloatingActionButtonDefaults.elevation(
-                                        defaultElevation = 8.dp,
-                                        pressedElevation = 12.dp
                                     )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = "Open Camera",
-                                        modifier = Modifier.size(24.dp)
+
+                                    FloatingActionButton(
+                                        onClick = { currentScreen = MainScreen.Camera },
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(end = 20.dp, bottom = 30.dp)
+                                            .size(56.dp),
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        elevation = FloatingActionButtonDefaults.elevation(
+                                            defaultElevation = 8.dp,
+                                            pressedElevation = 12.dp
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = "Open Camera",
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+
+                                MainScreen.Camera -> {
+                                    CameraScreen(
+                                        onBack = { currentScreen = MainScreen.Palette },
+                                        shutterOuterColor = shutterColor,
+                                        onOpenGallery = {
+                                            galleryReturnScreen = MainScreen.Camera
+                                            currentScreen = MainScreen.Gallery
+                                        }
                                     )
                                 }
 
-                            } else {
-                                CameraScreen(
-                                    onBack = { showCamera = false },
-                                    shutterOuterColor = shutterColor    // pass the color to CameraScreen
-                                )
+                                MainScreen.Gallery -> {
+                                    GalleryScreen(
+                                        onBack = { currentScreen = galleryReturnScreen }
+                                    )
+                                }
                             }
                         }
                     }
