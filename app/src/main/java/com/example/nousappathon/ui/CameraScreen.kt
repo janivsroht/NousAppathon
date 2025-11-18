@@ -33,7 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
-fun CameraScreen(onBack: () -> Unit) {
+fun CameraScreen(onBack: () -> Unit, shutterOuterColor:  androidx.compose.ui.graphics.Color) {
     val context = LocalContext.current
 
     // permissions
@@ -79,7 +79,7 @@ fun CameraScreen(onBack: () -> Unit) {
                 onClick = onBack,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(12.dp)
+                    .padding(30.dp)
             ) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
@@ -89,7 +89,7 @@ fun CameraScreen(onBack: () -> Unit) {
                 onClick = { /* optionally open gallery preview later */ },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(12.dp)
+                    .padding(30.dp)
             ) {
                 Icon(Icons.Default.Photo, contentDescription = "Gallery")
             }
@@ -105,7 +105,7 @@ fun CameraScreen(onBack: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(80.dp)
-                        .background(color = Color(0xFF3F51B5), shape = CircleShape),
+                        .background(color = shutterOuterColor, shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     // Inner white circle (shutter)

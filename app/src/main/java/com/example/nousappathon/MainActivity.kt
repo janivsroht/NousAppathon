@@ -3,15 +3,16 @@ package com.example.nousappathon
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
-import kotlin.random.Random
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.benchmark.traceprocessor.Row
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +26,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,9 +35,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
@@ -49,11 +49,11 @@ import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieAnimatable
 import com.airbnb.lottie.compose.rememberLottieComposition
-import com.example.nousappathon.ui.theme.NousAppathonTheme
-import kotlinx.coroutines.flow.collectLatest
-import kotlin.coroutines.cancellation.CancellationException
 import com.example.nousappathon.ui.CameraScreen
-
+import com.example.nousappathon.ui.theme.NousAppathonTheme
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.random.Random
+import android.graphics.Color as AndroidColor
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,45 +62,60 @@ class MainActivity : ComponentActivity() {
         setContent {
             NousAppathonTheme {
                 MaterialTheme {
+                    // use Compose Surface (not android.view.Surface)
                     Surface(modifier = Modifier.fillMaxSize()) {
                         var showCamera by remember { mutableStateOf(false) }
+
+                        // shutter color state (default white)
+                        var shutterColor by remember { mutableStateOf(Color.White) }
 
                         Box(modifier = Modifier.fillMaxSize()) {
                             if (!showCamera) {
 
-                                ColorWheelCenterWithRandomPlay()
+                                // pass callback so ColorWheel can report its picked color
+                                ColorWheelCenterWithRandomPlay(
+                                    onColorSelected = { pickedHex ->
+                                        try {
+                                            val intColor = AndroidColor.parseColor(pickedHex)
+                                            shutterColor = Color(intColor)
+                                        } catch (_: Exception) {
+                                            shutterColor = Color.White
+                                        }
+                                    }
+                                )
 
                                 FloatingActionButton(
                                     onClick = { showCamera = true },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
                                         .padding(end = 20.dp, bottom = 30.dp)
-                                        .size(56.dp) // default FAB size; adjust if you want larger
+                                        .size(56.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.CameraAlt,
                                         contentDescription = "Open Camera",
-                                        modifier = Modifier.size(24.dp) // icon size inside FAB
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
 
-
-
                             } else {
                                 CameraScreen(
-                                    onBack = { showCamera = false }
+                                    onBack = { showCamera = false },
+                                    shutterOuterColor = shutterColor    // pass the color to CameraScreen
                                 )
                             }
                         }
-
                     }
                 }
             }
         }
     }
+
+    // --- helper data + composable (kept inside Activity as you had) ---
     data class ColorInfo(val resId: Int, val displayName: String, val hex: String)
+
     @Composable
-    fun ColorWheelCenterWithRandomPlay() {
+    fun ColorWheelCenterWithRandomPlay(onColorSelected: (String) -> Unit) {
         // static wheel composition (but will be looped via animateLottieCompositionAsState)
         val wheelComposition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.nothing))
 
@@ -126,6 +141,10 @@ class MainActivity : ComponentActivity() {
 
         // whether the random animation finished (used to show text and re-enable button)
         var animationFinished by remember { mutableStateOf(false) }
+
+        // whether the current selection has been confirmed (locks Get button)
+        var isConfirmed by remember { mutableStateOf(false) }
+
 
         // --- Wheel playback: loop while no random animation is chosen/playing ---
         val wheelProgress by animateLottieCompositionAsState(
@@ -241,46 +260,109 @@ class MainActivity : ComponentActivity() {
             // Button
             val buttonEnabled = !isRandomPlaying && (currentInfo == null || animationFinished)
 
-            Button(
-                onClick = {
-                    if (!buttonEnabled) return@Button
-
-                    // immediate haptic on button press
-                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    vibrateOnce(ctx, 40L)
-
-                    // pick a random color animation and reset flags
-                    val pick = randomColorInfos[Random.nextInt(randomColorInfos.size)]
-                    currentInfo = pick
-                    animationFinished = false
-                    // animatable playback will start automatically because randomComposition changes and triggers LaunchedEffect
-                },
-                enabled = buttonEnabled,
+            // Buttons on a single line: Get | Change | Confirm
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = when {
-                        isRandomPlaying -> "Generating..."
-                        currentInfo == null -> "Get a Random Color"
-                        animationFinished -> "Get a Random Color"
-                        else -> "Generating..."
+                // Get a Random Color (keeps same behaviour but can be disabled by Confirm)
+                val getEnabled = !isRandomPlaying && (currentInfo == null || !isConfirmed)
+                Button(
+                    onClick = {
+                        if (!getEnabled) return@Button
+                        // immediate haptic on button press
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        vibrateOnce(ctx, 40L)
+
+                        // pick a random color animation and reset flags
+                        val pick = randomColorInfos[Random.nextInt(randomColorInfos.size)]
+                        currentInfo = pick
+                        animationFinished = false
+                        isConfirmed = false
+
+                        // report the picked hex back to MainActivity
+                        onColorSelected(pick.hex)
+                        // animatable playback will start automatically because randomComposition changes and triggers LaunchedEffect
+                    },
+                    enabled = getEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = when {
+                            isRandomPlaying -> "Generating..."
+                            currentInfo == null -> "Get a Random Color"
+                            animationFinished -> "Get a Random Color"
+                            else -> "Generating..."
+                        }
+                    )
+                }
+
+                // Change button — visible only when a color is present
+                if (currentInfo != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            // pressing Change should generate a new random pick and unlock Get
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            vibrateOnce(ctx, 30L)
+
+                            val pick = randomColorInfos[Random.nextInt(randomColorInfos.size)]
+                            currentInfo = pick
+                            animationFinished = false
+                            isConfirmed = false
+
+                            onColorSelected(pick.hex)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Text(text = "Change")
                     }
-                )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
+                // Confirm button — visible only when a color is present
+                if (currentInfo != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            // lock the selection
+                            isConfirmed = true
+                            // optionally provide a haptic cue
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            vibrateOnce(ctx, 30L)
+                        },
+                        enabled = !isConfirmed,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Text(text = if (!isConfirmed) "Confirm" else "Confirmed")
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
+
         }
     }
 
-    // Vibration helper (add near top-level of file, inside the Activity file as you had earlier)
+    // Vibration helper
     fun vibrateOnce(context: android.content.Context, durationMs: Long = 40L, amplitude: Int = VibrationEffect.DEFAULT_AMPLITUDE) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+                val vm = context.getSystemService(VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
                 val vibrator = vm.defaultVibrator
                 vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
             } else {
-                val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                val vibrator = context.getSystemService(VIBRATOR_SERVICE) as android.os.Vibrator
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
                 } else {
@@ -292,43 +374,22 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
     }
-    @Composable
-    fun MainHomeScreen(onOpenCamera: () -> Unit) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-
-            Button(onClick = onOpenCamera) {
-                Icon(
-                    imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Camera"
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Open Camera")
-            }
-
-        }
-    }
-
-
-
-
-
 
     @Preview(showBackground = true)
     @Composable
     fun GreetingPreview() {
         NousAppathonTheme {
-            ColorWheelCenterWithRandomPlay()
+            // preview needs the lambda param (dummy)
+            ColorWheelCenterWithRandomPlay(onColorSelected = { /* preview */ })
+
             var showCamera by remember { mutableStateOf(false) }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 if (!showCamera) {
 
-                    ColorWheelCenterWithRandomPlay()
+                    ColorWheelCenterWithRandomPlay(onColorSelected = { /* preview */ })
 
-                    // CAMERA BUTTON (TOP RIGHT OR WHEREVER YOU WANT)
+                    // CAMERA BUTTON
                     ExtendedFloatingActionButton(
                         onClick = { showCamera = true },
                         modifier = Modifier
@@ -343,10 +404,10 @@ class MainActivity : ComponentActivity() {
                         text = {}
                     )
 
-
                 } else {
                     CameraScreen(
-                        onBack = { showCamera = false }
+                        onBack = { showCamera = false },
+                        shutterOuterColor = Color.White
                     )
                 }
             }
